@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -40,8 +41,32 @@
 #define HAS_CLOCK_GETTIME_MONOTONIC
 #endif
 
+int read_all(int fd, void *buf, size_t count) {
+  size_t sofar;
+  for (sofar = 0; sofar < count;) {
+    ssize_t rv = read(fd, buf, count - sofar);
+    if (rv < 0) {
+      return -1;
+    }
+    sofar += rv;
+  }
+  return 0;
+}
+
+int write_all(int fd, const void *buf, size_t count) {
+  size_t sofar;
+  for (sofar = 0; sofar < count;) {
+    ssize_t rv = write(fd, buf, count - sofar);
+    if (rv < 0) {
+      return -1;
+    }
+    sofar += rv;
+  }
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
-  int size;
+  ssize_t size;
   char *buf;
   int64_t count, i, delta;
 #ifdef HAS_CLOCK_GETTIME_MONOTONIC
@@ -49,9 +74,6 @@ int main(int argc, char *argv[]) {
 #else
   struct timeval start, stop;
 #endif
-
-  ssize_t len;
-  size_t sofar;
 
   int yes = 1;
   int ret;
@@ -84,7 +106,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  printf("message size: %i octets\n", size);
+  printf("message size: %li octets\n", size);
   printf("roundtrip count: %li\n", count);
 
   if (!fork()) { /* child */
@@ -120,16 +142,12 @@ int main(int argc, char *argv[]) {
 
     for (i = 0; i < count; i++) {
 
-      for (sofar = 0; sofar < size;) {
-        len = read(new_fd, buf, size - sofar);
-        if (len == -1) {
-          perror("read");
-          return 1;
-        }
-        sofar += len;
+      if (read_all(new_fd, buf, size) == -1) {
+        perror("read");
+        return 1;
       }
 
-      if (write(new_fd, buf, size) != size) {
+      if (write_all(new_fd, buf, size) == -1) {
         perror("write");
         return 1;
       }
@@ -163,18 +181,14 @@ int main(int argc, char *argv[]) {
 
     for (i = 0; i < count; i++) {
 
-      if (write(sockfd, buf, size) != size) {
+      if (write_all(sockfd, buf, size) == -1) {
         perror("write");
         return 1;
       }
 
-      for (sofar = 0; sofar < size;) {
-        len = read(sockfd, buf, size - sofar);
-        if (len == -1) {
-          perror("read");
-          return 1;
-        }
-        sofar += len;
+      if (read_all(sockfd, buf, size) == -1) {
+        perror("read");
+        return 1;
       }
     }
 
@@ -199,6 +213,8 @@ int main(int argc, char *argv[]) {
 #endif
 
     printf("average latency: %li ns\n", delta / (count * 2));
+
+    wait(NULL);
   }
 
   return 0;

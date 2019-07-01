@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -38,9 +39,33 @@
 #define HAS_CLOCK_GETTIME_MONOTONIC
 #endif
 
+int read_all(int fd, void *buf, size_t count) {
+  size_t sofar;
+  for (sofar = 0; sofar < count;) {
+    ssize_t rv = read(fd, buf, count - sofar);
+    if (rv < 0) {
+      return -1;
+    }
+    sofar += rv;
+  }
+  return 0;
+}
+
+int write_all(int fd, const void *buf, size_t count) {
+  size_t sofar;
+  for (sofar = 0; sofar < count;) {
+    ssize_t rv = write(fd, buf, count - sofar);
+    if (rv < 0) {
+      return -1;
+    }
+    sofar += rv;
+  }
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   int sv[2]; /* the pair of socket descriptors */
-  int size;
+  ssize_t size;
   char *buf;
   int64_t count, i, delta;
 #ifdef HAS_CLOCK_GETTIME_MONOTONIC
@@ -63,7 +88,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  printf("message size: %i octets\n", size);
+  printf("message size: %li octets\n", size);
   printf("roundtrip count: %li\n", count);
 
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) {
@@ -74,12 +99,12 @@ int main(int argc, char *argv[]) {
   if (!fork()) { /* child */
     for (i = 0; i < count; i++) {
 
-      if (read(sv[1], buf, size) != size) {
+      if (read_all(sv[1], buf, size) == -1) {
         perror("read");
         return 1;
       }
 
-      if (write(sv[1], buf, size) != size) {
+      if (write_all(sv[1], buf, size) == -1) {
         perror("write");
         return 1;
       }
@@ -100,12 +125,12 @@ int main(int argc, char *argv[]) {
 
     for (i = 0; i < count; i++) {
 
-      if (write(sv[0], buf, size) != size) {
+      if (write_all(sv[0], buf, size) == -1) {
         perror("write");
         return 1;
       }
 
-      if (read(sv[0], buf, size) != size) {
+      if (read_all(sv[0], buf, size) == -1) {
         perror("read");
         return 1;
       }
@@ -132,6 +157,8 @@ int main(int argc, char *argv[]) {
 #endif
 
     printf("average latency: %li ns\n", delta / (count * 2));
+
+    wait(NULL);
   }
 
   return 0;

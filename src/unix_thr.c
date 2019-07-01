@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -37,6 +38,30 @@
     defined(_POSIX_MONOTONIC_CLOCK)
 #define HAS_CLOCK_GETTIME_MONOTONIC
 #endif
+
+int read_all(int fd, void *buf, size_t count) {
+  size_t sofar;
+  for (sofar = 0; sofar < count;) {
+    ssize_t rv = read(fd, buf, count - sofar);
+    if (rv < 0) {
+      return -1;
+    }
+    sofar += rv;
+  }
+  return 0;
+}
+
+int write_all(int fd, const void *buf, size_t count) {
+  size_t sofar;
+  for (sofar = 0; sofar < count;) {
+    ssize_t rv = write(fd, buf, count - sofar);
+    if (rv < 0) {
+      return -1;
+    }
+    sofar += rv;
+  }
+  return 0;
+}
 
 int main(int argc, char *argv[]) {
   int fds[2]; /* the pair of socket descriptors */
@@ -75,7 +100,7 @@ int main(int argc, char *argv[]) {
     /* child */
 
     for (i = 0; i < count; i++) {
-      if (read(fds[1], buf, size) != size) {
+      if (read_all(fds[1], buf, size) == -1) {
         perror("read");
         return 1;
       }
@@ -96,11 +121,13 @@ int main(int argc, char *argv[]) {
 #endif
 
     for (i = 0; i < count; i++) {
-      if (write(fds[0], buf, size) != size) {
+      if (write_all(fds[0], buf, size) == -1) {
         perror("write");
         return 1;
       }
     }
+
+    wait(NULL);
 
 #ifdef HAS_CLOCK_GETTIME_MONOTONIC
     if (clock_gettime(CLOCK_MONOTONIC, &stop) == -1) {

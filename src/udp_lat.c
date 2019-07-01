@@ -33,6 +33,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -42,7 +43,7 @@
 #endif
 
 int main(int argc, char *argv[]) {
-  int size;
+  ssize_t size;
   char *buf;
   int64_t count, i, delta;
 #ifdef HAS_CLOCK_GETTIME_MONOTONIC
@@ -52,7 +53,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   ssize_t len;
-  size_t sofar;
+  ssize_t sofar;
 
   int yes = 1;
   int ret;
@@ -88,8 +89,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  printf("message size: %i octets\n", size);
-  printf("roundtrip count: %lli\n", count);
+  printf("message size: %li octets\n", size);
+  printf("roundtrip count: %li\n", count);
 
   if (!fork()) { /* child */
 
@@ -120,9 +121,15 @@ int main(int argc, char *argv[]) {
         sofar += len;
       }
 
-      if (sendto(sockfd, buf, size, 0, resParent->ai_addr, resParent->ai_addrlen) != size) {
-        perror("sendto");
-        return 1;
+      for (sofar = 0; sofar < size;) {
+        size_t chunk = size - sofar;
+        chunk = (chunk > 65000) ? 65000 : chunk;
+        len = sendto(sockfd, buf, chunk, 0, resParent->ai_addr, resParent->ai_addrlen);
+        if (len == -1) {
+          perror("sendto");
+          return 1;
+        }
+        sofar += len;
       }
     }
   } else { /* parent */
@@ -159,9 +166,14 @@ int main(int argc, char *argv[]) {
 
     for (i = 0; i < count; i++) {
 
-      if (sendto(sockfd, buf, size, 0, resChild->ai_addr, resChild->ai_addrlen) != size) {
-        perror("sendto");
-        return 1;
+      for (sofar = 0; sofar < size;) {
+        size_t chunk = (size > 65000) ? 65000 : size;
+        len = sendto(sockfd, buf, chunk, 0, resChild->ai_addr, resChild->ai_addrlen);
+        if (len == -1) {
+          perror("sendto");
+          return 1;
+        }
+        sofar += len;
       }
 
       for (sofar = 0; sofar < size;) {
@@ -194,7 +206,9 @@ int main(int argc, char *argv[]) {
 
 #endif
 
-    printf("average latency: %lli ns\n", delta / (count * 2));
+    printf("average latency: %li ns\n", delta / (count * 2));
+
+    wait(NULL);
   }
 
   return 0;

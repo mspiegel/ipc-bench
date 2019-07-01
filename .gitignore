@@ -1,1 +1,24 @@
 .idea/
+data/
+
+# makefiles
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+
+# executables
+shmem_spin_lat
+shmem_spin_thr
+shmem_wait_lat
+shmem_wait_thr
+pipe_lat
+pipe_thr
+tcp_lat
+tcp_thr
+tcp_local_lat
+tcp_remote_lat
+udp_lat
+udp_thr
+unix_lat
+unix_thr
